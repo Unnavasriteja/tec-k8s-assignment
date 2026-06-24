@@ -1,21 +1,21 @@
-# Phase 1 — Cluster Setup
+# Phase 1: Cluster Setup
 
 ## Tool Choice: k3d
 
-k3d runs Kubernetes nodes as Docker containers on your local machine.
-Chosen over alternatives for the following reasons:
+k3d runs Kubernetes nodes as Docker containers on the local machine.
+Selected over other options for these reasons:
 
 | Tool | Reason not chosen |
 |------|------------------|
-| minikube | Multi-node support is clunky, not production-like |
+| minikube | Multi-node support is limited and not production-like |
 | kind | Slower on M2 Mac |
-| kubeadm + VMs | Too heavy for 8GB RAM |
-| k3d | Lightweight, M2 native, nodes as containers |
+| kubeadm + VMs | Too resource heavy for 8GB RAM |
+| k3d | Lightweight, M2 compatible, nodes run as containers |
 
 ## Cluster Architecture
 
-1 control plane + 2 worker nodes — minimum required for demonstrating
-pod spreading and node failover.
+1 control plane + 2 worker nodes. This is the minimum setup needed
+to demonstrate pod spreading across nodes and simulate node failover.
 
 ## Command Used
 
@@ -28,18 +28,18 @@ k3d cluster create tec-cluster \
 
 ## Flags Explained
 
-- `--agents 2` — creates 2 worker nodes
-- `--disable=traefik` — removes default ingress to save RAM
-- `--port "8080:80"` — maps localhost:8080 to cluster port 80
+- `--agents 2`: creates 2 worker nodes
+- `--disable=traefik`: removes the default ingress controller to save memory
+- `--port "8080:80"`: maps localhost:8080 on the Mac to port 80 inside the cluster
 
 ## Verified Output
 
-kubectl get nodes shows all 3 nodes in Ready state.
+All 3 nodes showing Ready status confirmed via kubectl get nodes.
 
 ## High Availability in Production
 
-Locally we run 1 control plane node. In production, HA means:
-- 3 control plane nodes minimum
-- etcd distributed across all 3 (needs odd number for quorum)
-- If 1 control plane goes down, the other 2 maintain cluster state
-- Tools like kubeadm or managed services (EKS, GKE) handle this automatically
+Locally this runs with a single control plane node. In production, HA requires:
+- Minimum 3 control plane nodes
+- etcd distributed across all 3 nodes (odd number needed for quorum)
+- If one control plane goes down, the remaining two maintain cluster state
+- Managed services like EKS and GKE handle this automatically
