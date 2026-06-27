@@ -116,3 +116,68 @@ Both probes use HTTP GET on port 80 with failureThreshold: 3 to avoid
 action on a single slow response.
 
 ![Probes configured](screenshots/phase4-probes.png)
+
+## Observability
+
+### Monitoring Stack
+
+Installed via Helm in the monitoring namespace.
+
+| Component | Purpose |
+|-----------|---------|
+| Prometheus | Metrics collection and storage |
+| Grafana | Visualization and dashboards |
+| Alertmanager | Alert routing and notification |
+| Loki | Log aggregation and storage |
+| Grafana Alloy | Log collection from all pods |
+
+### Why kube-prometheus-stack
+
+Installs Prometheus, Grafana, Alertmanager, node exporters, and
+kube-state-metrics in a single Helm chart. This is the production
+standard for Kubernetes monitoring. A custom values file was used
+to reduce resource usage for local deployment.
+
+### Why Grafana Alloy Instead of Promtail
+
+The assignment suggested Loki + Promtail. Promtail reached end of
+life on March 2, 2026. Grafana Alloy is the current recommended
+replacement for log collection with Loki. Alloy runs as a DaemonSet
+with one pod per node, attaches Kubernetes metadata labels to every
+log line, and ships logs to Loki automatically.
+
+### Custom Alert Rules
+
+Two custom PrometheusRule resources were created:
+
+NodeNotReady: fires when a node has been NotReady for more than 1 minute.
+Uses kube_node_status_condition metric. Severity: critical.
+
+PodRestartingTooMuch: fires when a pod restarts more than 5 times in
+15 minutes. Uses rate() on kube_pod_container_status_restarts_total.
+Severity: warning.
+
+![Monitoring pods running](screenshots/phase5-monitoring-pods.png)
+
+![Grafana dashboards](screenshots/phase5-grafana-dashboards.png)
+
+![Grafana cluster metrics](screenshots/phase5-grafana-cluster-metrics.png)
+
+![Prometheus alert rules](screenshots/phase5-prometheus-alerts1.png)
+
+![Loki logs in Grafana](screenshots/phase5-loki-logs.png)
+
+### Log Verification
+
+Logs verified two ways:
+
+1. Grafana Explore view using LogQL query {namespace="default"} shows
+nginx access logs with full Kubernetes metadata labels.
+
+2. kubectl logs aggregation across all pods simultaneously:
+
+```bash
+kubectl logs -l app=nginx --all-containers=true --prefix=true
+```
+
+![kubectl logs](screenshots/phase5-kubectl-logs.png)
