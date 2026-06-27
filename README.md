@@ -181,3 +181,94 @@ kubectl logs -l app=nginx --all-containers=true --prefix=true
 ```
 
 ![kubectl logs](screenshots/phase5-kubectl-logs.png)
+
+## Automatic Failover
+
+### Method
+
+Node failure simulated using k3d node stop, which stops the Docker
+container acting as the worker node. This is equivalent to a server
+losing power or network connectivity.
+
+### Sequence
+
+A continuous curl loop ran against localhost:8080 throughout the
+entire event to prove nginx remained available.
+
+1. Baseline: 3 nodes Ready, 3 pods Running, curl returning 200
+2. Node stopped: k3d-tec-cluster-agent-0 moved to NotReady
+3. Self-healing: Deployment controller immediately created a replacement pod
+4. Anti-affinity held: replacement stayed Pending until a valid node was available
+5. Recovery: node restarted, replacement pod scheduled and Running within seconds
+6. Full recovery: 3 nodes Ready, 3 pods Running, curl never dropped
+
+### Key Observation
+
+nginx continued serving HTTP 200 throughout the entire event from
+the two surviving pods. The replacement pod stayed Pending rather
+than violating the anti-affinity constraint. The moment the node
+recovered, the pod scheduled immediately.
+
+In production this Pending period would not occur because production
+clusters run more nodes than replicas. Cluster Autoscaler would also
+provision a new node automatically if pods remained Pending.
+
+![Node failure](screenshots/phase6-node-failure.png)
+
+![Self-healing in progress](screenshots/phase6-self-healing.png)
+
+![curl returning 200 throughout](screenshots/phase6-curl-200-during-failure.png)
+
+![Full recovery](screenshots/phase6-recovery.png)
+
+## Future Improvements
+
+The following improvements represent natural next steps for a
+production deployment:
+
+- HA control plane with 3 nodes and external etcd cluster
+- Horizontal Pod Autoscaler based on CPU utilisation
+- Cluster Autoscaler or Karpenter for automatic node provisioning
+- TLS termination via Ingress controller with cert-manager
+- RBAC with least-privilege service accounts per namespace
+- Network policies to restrict pod-to-pod traffic
+- Persistent storage for Prometheus and Loki using PVCs
+- Secrets management via Vault or AWS Secrets Manager
+- Image scanning in CI pipeline before deployment
+- Pod Disruption Budgets to control voluntary disruptions
+
+## How to Reproduce
+
+### Prerequisites
+
+- Docker Desktop running
+- k3d, kubectl, and Helm installed
+
+### Steps
+
+```bash
+k3d cluster create tec-cluster \
+  --agents 2 \
+  --k3s-arg "--disable=traefik@server:0" \
+  --port "8080:80@loadbalancer"
+
+kubectl apply -f manifests/deployment.yaml
+kubectl apply -f manifests/service.yaml
+
+helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+  --namespace monitoring \
+  --values monitoring/prometheus-values.yaml
+
+kubectl apply -f monitoring/alert-rules.yaml
+
+helm install loki grafana/loki \
+  --namespace monitoring \
+  --values monitoring/loki-values.yaml
+
+helm install alloy grafana/alloy \
+  --namespace monitoring \
+  --values monitoring/alloy-values.yaml
+```
+
+nginx accessible at http://localhost:8080
+Grafana accessible via port-forward at http://localhost:3000
