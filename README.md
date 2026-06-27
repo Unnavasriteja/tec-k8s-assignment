@@ -22,43 +22,6 @@ tec-k8s-assignment/
 ```
 ## Architecture
 
-### Local Setup
-Local Machine
-
-└── Docker Desktop
-
-└── k3d cluster: tec-cluster
-
-├── control-plane node (k3d-tec-cluster-server-0)
-
-│   ├── nginx pod
-
-│   └── node-exporter
-
-├── worker node 1 (k3d-tec-cluster-agent-0)
-
-│   ├── nginx pod
-
-│   ├── node-exporter
-
-│   └── alloy (log collector)
-
-└── worker node 2 (k3d-tec-cluster-agent-1)
-
-├── nginx pod
-
-├── node-exporter
-
-└── alloy (log collector)
-    monitoring namespace
-    ├── Prometheus    (metrics database)
-    ├── Grafana       (visualization)
-    ├── Alertmanager  (alert routing)
-    └── Loki          (log storage)
-
-    Traffic flow
-    localhost:8080 → LoadBalancer → nginx Service → 3 pods
-
 ![Architecture Diagram](screenshots/architecture-diagram.png)
 
 ### Key Design Decisions
@@ -99,4 +62,3 @@ etcd uses the Raft consensus algorithm and needs an odd number
 of nodes for quorum. With 3 nodes, losing 1 still leaves 2 able
 to agree on cluster state. Managed services like EKS handle this
 automatically across availability zones without any manual configuration.
-### Local Setup
