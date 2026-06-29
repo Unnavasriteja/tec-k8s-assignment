@@ -18,7 +18,10 @@ grafana:
     limits:
       memory: "256Mi"
       cpu: "200m"
-  adminPassword: "Tec@Local2026"
+  admin:
+    existingSecret: grafana-admin-secret
+    userKey: admin-user
+    passwordKey: admin-password
 
 alertmanager:
   alertmanagerSpec:
