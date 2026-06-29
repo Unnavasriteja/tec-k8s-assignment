@@ -313,6 +313,3 @@ To remove the entire cluster:
 ```bash
 ./teardown.sh
 ```
-
-nginx accessible at http://localhost:8080
-Grafana accessible via port-forward at http://localhost:3000
