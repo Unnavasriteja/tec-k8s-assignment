@@ -143,6 +143,7 @@ stops flowing. terminationGracePeriodSeconds: 30 allows in-flight
 requests to complete before the container is killed.
 
 ![Probes configured](screenshots/phase4-probes-updated.png)
+![Probes configured](screenshots/phase4-probes-updated.png)
 
 ## Observability
 
