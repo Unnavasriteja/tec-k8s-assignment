@@ -10,16 +10,30 @@ The setup demonstrates core Kubernetes engineering practices including
 pod scheduling guarantees, self-healing deployments, health checks,
 metrics collection, log aggregation, and node failure recovery.
 
+## Assignment Tasks Covered
+
+- Multi-node cluster: 1 control plane + 2 worker nodes using k3d
+- Application deployment: nginx with 3 replicas, RollingUpdate strategy, LoadBalancer Service
+- Pod spreading: topologySpreadConstraints across kubernetes.io/hostname
+- Health checks: liveness and readiness probes on every container
+- Monitoring: kube-prometheus-stack with two custom alert rules
+- Log aggregation: Loki and Grafana Alloy with Grafana Explore verification
+- Automatic failover: node failure simulated, traffic remained available, and replacement pod scheduling verified
+
 ## Repository Structure
 
-```
 tec-k8s-assignment/
+
 ├── cluster/          # Cluster setup documentation
+
 ├── manifests/        # Kubernetes deployment and service manifests
+
 ├── monitoring/       # Prometheus, Loki, and Alloy configuration
+
 ├── docs/             # Phase documentation
+
 └── screenshots/      # Evidence for each phase
-```
+
 ## Architecture
 
 ![Architecture Diagram](screenshots/architecture-diagram.png)
@@ -33,6 +47,10 @@ on resources. It also has native ARM support and spins up in under a minute.
 All monitoring components run in a dedicated monitoring namespace, isolated
 from the application in the default namespace. This mirrors production
 practice for RBAC and resource management.
+
+Note: In this local k3d setup, the server node is schedulable and runs
+application workloads. In production, application pods would run exclusively
+on worker nodes, with the control plane isolated using taints and tolerations.
 
 ## Cluster Setup
 
@@ -66,7 +84,7 @@ automatically across availability zones without any manual configuration.
 ## Application Deployment
 
 Tool: nginx:1.25
-Replicas: 3, spread across all nodes via pod anti-affinity
+Replicas: 3, spread across all nodes via topologySpreadConstraints
 
 ### Deployment Strategy
 
@@ -74,20 +92,22 @@ RollingUpdate was chosen over Recreate to ensure zero downtime during
 updates. maxSurge: 1 allows one extra pod during rollout. maxUnavailable: 1
 means at minimum 2 pods are always serving traffic during an update.
 
-### Pod Anti-Affinity
+Recreate is generally avoided for user-facing stateless web applications
+because it can cause downtime. RollingUpdate is preferred when continuous
+availability is required.
 
-A hard anti-affinity rule guarantees one nginx pod per node. Without this,
-the scheduler spreads pods by default but does not guarantee it. The rule
-uses requiredDuringSchedulingIgnoredDuringExecution with topologyKey
-kubernetes.io/hostname, meaning the scheduler will not place a pod on a
-node that already has an nginx pod running.
+### Pod Spreading
 
-Proof of enforcement: kubectl describe pod showed FailedScheduling events
-confirming the scheduler evaluated and enforced the rule before placement.
+topologySpreadConstraints were used to spread nginx replicas across nodes
+using the kubernetes.io/hostname topology key. maxSkew: 1 encourages an
+even distribution of pods across nodes during normal operation.
+whenUnsatisfiable: ScheduleAnyway was selected so the scheduler can still
+place replacement pods on surviving nodes during failure conditions without
+leaving them Pending.
 
 ![Pods running across nodes](screenshots/phase2-pods-running.png)
 
-![Anti-affinity enforced](screenshots/phase3-antiaffinity-proof.png)
+![topologySpreadConstraints active](screenshots/phase3-topology-spread-proof.png)
 
 ### Service
 
@@ -99,6 +119,8 @@ app: nginx routes traffic to all 3 pods automatically.
 ## Health Checks
 
 Both liveness and readiness probes are configured on every nginx container.
+All probe fields are explicitly defined to show intent rather than relying
+on defaults.
 
 ### Liveness Probe
 
@@ -112,10 +134,15 @@ Checks if the container is ready to serve traffic. If it fails, the pod
 is removed from Service endpoints without restarting. Configured with
 initialDelaySeconds: 5 to detect readiness as quickly as possible.
 
-Both probes use HTTP GET on port 80 with failureThreshold: 3 to avoid
-action on a single slow response.
+Both probes use HTTP GET on port 80 with timeoutSeconds: 2,
+failureThreshold: 3, and successThreshold: 1 explicitly defined.
 
-![Probes configured](screenshots/phase4-probes.png)
+A preStop lifecycle hook sleeps 5 seconds before container shutdown,
+giving the Service time to remove the pod from endpoints before traffic
+stops flowing. terminationGracePeriodSeconds: 30 allows in-flight
+requests to complete before the container is killed.
+
+![Probes configured](screenshots/phase4-probes-updated.png)
 
 ## Observability
 
@@ -134,17 +161,30 @@ Installed via Helm in the monitoring namespace.
 ### Why kube-prometheus-stack
 
 Installs Prometheus, Grafana, Alertmanager, node exporters, and
-kube-state-metrics in a single Helm chart. This is the production
-standard for Kubernetes monitoring. A custom values file was used
-to reduce resource usage for local deployment.
+kube-state-metrics in a single Helm chart. It is a commonly used
+production-grade monitoring stack for Kubernetes. A custom values
+file was used to reduce resource usage for local deployment.
 
 ### Why Grafana Alloy Instead of Promtail
 
-The assignment suggested Loki + Promtail. Promtail reached end of
+The assignment suggested Loki and Promtail. Promtail reached end of
 life on March 2, 2026. Grafana Alloy is the current recommended
 replacement for log collection with Loki. Alloy runs as a DaemonSet
 with one pod per node, attaches Kubernetes metadata labels to every
 log line, and ships logs to Loki automatically.
+
+### Grafana Credentials
+
+The Grafana admin password is stored in a Kubernetes Secret rather
+than hardcoded in the values file. The Secret is referenced in the
+Helm values using existingSecret.
+
+```bash
+kubectl create secret generic grafana-admin-secret \
+  --namespace monitoring \
+  --from-literal=admin-user=admin \
+  --from-literal=admin-password=<your-password>
+```
 
 ### Custom Alert Rules
 
@@ -187,39 +227,45 @@ kubectl logs -l app=nginx --all-containers=true --prefix=true
 ### Method
 
 Node failure simulated using k3d node stop, which stops the Docker
-container acting as the worker node. This is equivalent to a server
-losing power or network connectivity.
+container acting as the worker node. A continuous curl loop ran
+against localhost:8080 throughout the entire event.
 
 ### Sequence
 
-A continuous curl loop ran against localhost:8080 throughout the
-entire event to prove nginx remained available.
+1. Baseline: 3 nodes Ready, 3 pods Running, curl returning HTTP 200
+2. Node stopped: one worker moved to NotReady
+3. Traffic behavior: curl continued returning HTTP 200 through remaining pods
+4. Self-healing: Deployment created a replacement pod immediately
+5. Scheduling: replacement pod scheduled on an available node because
+   topologySpreadConstraints used ScheduleAnyway
+6. Brief interruption: approximately 3-5 seconds of connection failures
+   during abrupt node loss due to endpoint propagation delay
+7. Recovery: failed node started again and returned to Ready
+8. Final state: deployment returned to 3 replicas, one per node
 
-1. Baseline: 3 nodes Ready, 3 pods Running, curl returning 200
-2. Node stopped: k3d-tec-cluster-agent-0 moved to NotReady
-3. Self-healing: Deployment controller immediately created a replacement pod
-4. Anti-affinity held: replacement stayed Pending until a valid node was available
-5. Recovery: node restarted, replacement pod scheduled and Running within seconds
-6. Full recovery: 3 nodes Ready, 3 pods Running, curl never dropped
+### Note on Brief Connection Failures
 
-### Key Observation
+A brief interruption of approximately 3-5 seconds was observed during
+the node failure. This is expected behavior during abrupt node loss.
+The preStop hook reduces this window during graceful termination but
+cannot prevent it during sudden node failure. The Service endpoint
+controller requires time to detect the pod is gone and update routing.
 
-nginx continued serving HTTP 200 throughout the entire event from
-the two surviving pods. The replacement pod stayed Pending rather
-than violating the anti-affinity constraint. The moment the node
-recovered, the pod scheduled immediately.
+### Note on Eviction Timeout
 
-In production this Pending period would not occur because production
-clusters run more nodes than replicas. Cluster Autoscaler would also
-provision a new node automatically if pods remained Pending.
+The default node eviction timeout is 5 minutes. This is intentional.
+Kubernetes does not immediately reschedule pods when a node goes down
+because the outage could be a brief network blip. In production the
+correct approach for planned maintenance is kubectl cordon and
+kubectl drain which evicts pods immediately and gracefully.
 
-![Node failure](screenshots/phase6-node-failure.png)
+![Node failure](screenshots/phase6-node-notready.png)
 
-![Self-healing in progress](screenshots/phase6-self-healing.png)
+![Self-healing immediate scheduling](screenshots/phase6-self-healing-immediate.png)
 
 ![curl returning 200 throughout](screenshots/phase6-curl-200-during-failure.png)
 
-![Full recovery](screenshots/phase6-recovery.png)
+![Full recovery](screenshots/phase6-full-recovery.png)
 
 ## Future Improvements
 
@@ -229,13 +275,13 @@ production deployment:
 - HA control plane with 3 nodes and external etcd cluster
 - Horizontal Pod Autoscaler based on CPU utilisation
 - Cluster Autoscaler or Karpenter for automatic node provisioning
-- TLS termination via Ingress controller with cert-manager
+- Ingress controller with TLS termination via cert-manager
 - RBAC with least-privilege service accounts per namespace
 - Network policies to restrict pod-to-pod traffic
 - Persistent storage for Prometheus and Loki using PVCs
-- Secrets management via Vault or AWS Secrets Manager
 - Image scanning in CI pipeline before deployment
 - Pod Disruption Budgets to control voluntary disruptions
+- Multi-environment setup with dev, staging, and production namespaces
 
 ## How to Reproduce
 
@@ -254,6 +300,11 @@ k3d cluster create tec-cluster \
 
 kubectl apply -f manifests/deployment.yaml
 kubectl apply -f manifests/service.yaml
+
+kubectl create secret generic grafana-admin-secret \
+  --namespace monitoring \
+  --from-literal=admin-user=admin \
+  --from-literal=admin-password=<your-password>
 
 helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
   --namespace monitoring \
