@@ -22,17 +22,16 @@ metrics collection, log aggregation, and node failure recovery.
 
 ## Repository Structure
 
+```
 tec-k8s-assignment/
-
+├── setup.sh          # One-command cluster setup
+├── teardown.sh       # One-command cluster teardown
 ├── cluster/          # Cluster setup documentation
-
 ├── manifests/        # Kubernetes deployment and service manifests
-
 ├── monitoring/       # Prometheus, Loki, and Alloy configuration
-
 ├── docs/             # Phase documentation
-
 └── screenshots/      # Evidence for each phase
+```
 
 ## Architecture
 
@@ -142,7 +141,6 @@ giving the Service time to remove the pod from endpoints before traffic
 stops flowing. terminationGracePeriodSeconds: 30 allows in-flight
 requests to complete before the container is killed.
 
-![Probes configured](screenshots/phase4-probes-updated.png)
 ![Probes configured](screenshots/phase4-probes-updated.png)
 
 ## Observability
