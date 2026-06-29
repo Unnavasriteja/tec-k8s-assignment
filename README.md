@@ -156,6 +156,7 @@ Installed via Helm in the monitoring namespace.
 | Alertmanager | Alert routing and notification |
 | Loki | Log aggregation and storage |
 | Grafana Alloy | Log collection from all pods |
+| Kubernetes Descheduler | Automatic pod rebalancing after node recovery |
 
 ### Why kube-prometheus-stack
 
@@ -292,32 +293,25 @@ production deployment:
 ### Steps
 
 ```bash
-k3d cluster create tec-cluster \
-  --agents 2 \
-  --k3s-arg "--disable=traefik@server:0" \
-  --port "8080:80@loadbalancer"
+./setup.sh
+```
 
-kubectl apply -f manifests/deployment.yaml
-kubectl apply -f manifests/service.yaml
+This script handles all installation steps automatically including cluster creation,
+nginx deployment, monitoring stack, log aggregation, and the Descheduler.
 
-kubectl create secret generic grafana-admin-secret \
-  --namespace monitoring \
-  --from-literal=admin-user=admin \
-  --from-literal=admin-password=<your-password>
+nginx accessible at http://localhost:8080
 
-helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
-  --namespace monitoring \
-  --values monitoring/prometheus-values.yaml
+Grafana accessible via port-forward:
+```bash
+kubectl --namespace monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80
+```
+Then open http://localhost:3000 (admin / Tec@Local2026)
 
-kubectl apply -f monitoring/alert-rules.yaml
+### Teardown
 
-helm install loki grafana/loki \
-  --namespace monitoring \
-  --values monitoring/loki-values.yaml
-
-helm install alloy grafana/alloy \
-  --namespace monitoring \
-  --values monitoring/alloy-values.yaml
+To remove the entire cluster:
+```bash
+./teardown.sh
 ```
 
 nginx accessible at http://localhost:8080
