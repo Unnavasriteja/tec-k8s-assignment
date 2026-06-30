@@ -79,10 +79,21 @@ info "Step 5/8: Creating Grafana admin secret..."
 if kubectl get secret grafana-admin-secret -n monitoring >/dev/null 2>&1; then
   echo "  Secret already exists. Skipping."
 else
+  echo ""
+  read -sp "  Enter a Grafana admin password (or press Enter to generate one): " GRAFANA_PASSWORD
+  echo ""
+
+  if [ -z "$GRAFANA_PASSWORD" ]; then
+    GRAFANA_PASSWORD=$(openssl rand -base64 12)
+    echo "  No password entered. Generated one for you:"
+    echo "  Grafana password: $GRAFANA_PASSWORD"
+    echo "  (save this, it will not be shown again)"
+  fi
+
   kubectl create secret generic grafana-admin-secret \
     --namespace monitoring \
     --from-literal=admin-user=admin \
-    --from-literal=admin-password=Tec@Local2026
+    --from-literal=admin-password="$GRAFANA_PASSWORD"
 fi
 
 ok "Grafana secret created"
@@ -179,7 +190,7 @@ echo ""
 echo "  nginx:     http://localhost:8080"
 echo ""
 echo "  Grafana:   kubectl --namespace monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80"
-echo "             then open http://localhost:3000 (admin / Tec@Local2026)"
+echo "             then open http://localhost:3000 (admin / the password you entered above)"
 echo ""
 echo "  Prometheus: kubectl --namespace monitoring port-forward svc/kube-prometheus-stack-prometheus 9090:9090"
 echo "              then open http://localhost:9090"
